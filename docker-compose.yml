@@ -1,0 +1,10 @@
+# Déploiement sur un VPS (Docker) : docker compose up -d --build
+services:
+  planmetric:
+    build: .
+    container_name: planmetric-pro
+    restart: unless-stopped
+    environment:
+      - PORT=10000
+    ports:
+      - "10000:10000"
