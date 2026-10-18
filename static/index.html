@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1F4E79">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PlanMetric">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<title>PlanMetric Pro — Plans PDF → 3D → Métrés réels → Devis, Matériaux & Main-d'œuvre</title>
+<style>
+:root{--bleu:#1F4E79;--bleu2:#2E74B5;--rouge:#C00000;--orange:#ED7D31;--vert:#548235;--gris:#F2F2F2}
+*{box-sizing:border-box}body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#EEF2F7;color:#1a1a1a}
+header{background:linear-gradient(90deg,var(--bleu),var(--bleu2));color:#fff;padding:22px 30px}
+header h1{margin:0;font-size:24px}header p{margin:6px 0 0;opacity:.9;font-size:14px}
+main{max-width:1280px;margin:0 auto;padding:18px}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.drop{border:2px dashed var(--bleu2);border-radius:12px;padding:28px;text-align:center;background:#F4F8FC;cursor:pointer}
+.drop:hover{background:#E8F1FA}.drop input{display:none}
+button{background:var(--bleu);color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer;margin:3px}
+button.sec{background:#fff;color:var(--bleu);border:1.5px solid var(--bleu)}button:disabled{opacity:.45;cursor:not-allowed}
+button.vert{background:var(--vert)}button.rouge{background:var(--rouge)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.kpi{background:var(--gris);border-radius:10px;padding:12px}.kpi b{display:block;font-size:20px;color:var(--bleu)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{background:var(--bleu);color:#fff;padding:7px;text-align:left}
+td{border-bottom:1px solid #DDD;padding:6px;vertical-align:top}tr.lot td{background:#DCE6F1;font-weight:bold}
+input[type=number]{width:82px;padding:4px}input[type=text]{padding:6px}
+.badge{padding:2px 7px;border-radius:9px;color:#fff;font-size:11px;white-space:nowrap}
+.MESURÉ,.OK{background:var(--vert)}.CALCULÉ{background:var(--bleu2)}.HYPOTHÈSE,.ALERTE{background:var(--orange)}.MANQUANT{background:var(--rouge)}.BLOQUANT{background:var(--rouge)}
+.tabs button{background:#D9E2EC;color:#243B53}.tabs button.actif{background:var(--bleu);color:#fff}
+#vue3d{width:100%;height:440px;background:linear-gradient(#DCE9F5,#F7FAFD);border-radius:10px;cursor:grab;touch-action:none}
+.small{font-size:12px;color:#555}.hidden{display:none}.alert{border-left:5px solid var(--rouge);background:#FDECEC;padding:10px;border-radius:6px}
+.okbox{border-left:5px solid var(--vert);background:#EFF6E8;padding:10px;border-radius:6px}
+label.chk{display:block;padding:6px 0;font-size:14px}details summary{cursor:pointer;font-weight:bold;color:var(--bleu)}
+.flex{display:flex;gap:14px;flex-wrap:wrap}.flex>*{flex:1;min-width:300px}
+</style></head><body>
+<header><h1>🏗️ PlanMetric Pro</h1>
+<p><button id="btnInstall" style="background:#ED7D31;display:none">📲 Installer l'application sur cet appareil</button>
+<span id="installOk" style="display:none">✅ Application installée / lancée en mode application</span></p>
+<p>Plans PDF d'architecte / permis de construire → <b>modélisation 3D</b> → <b>métrés réels traçables</b> → devis poste par poste → <b>matériaux &amp; main-d'œuvre</b>. Aucune quantité sans formule ni source.</p></header>
+<main>
+<div class="card">
+  <h2>1 · Charger un plan PDF (vectoriel de préférence)</h2>
+  <div class="drop" id="drop">📄 Glissez-déposez <b>toutes les feuilles du dossier</b> (plusieurs PDF acceptés : plans de niveaux, coupe, façades, plan de masse, menuiseries…) ou cliquez pour les choisir<input type="file" id="file" accept="application/pdf" multiple></div>
+  <p><button class="sec" onclick="location.href='/api/plan-exemple'">⬇ Télécharger un plan PDF d'exemple (maison R+1 cotée)</button>
+  <button onclick="demo()">▶ Analyser le plan d'exemple intégré</button>
+  <span class="small">Astuce : testez avec le plan d'exemple, dont les cotes sont connues (12,00 × 9,00 m, 118 m²) pour vérifier l'exactitude des métrés.</span></p>
+  <details><summary>⚙ Valeurs de secours (utilisées UNIQUEMENT si la donnée est absente du dossier : le poste est alors marqué MANQUANT et le devis définitif bloqué)</summary>
+    <div class="grid" style="margin-top:10px" id="params"></div>
+    <p class="small">Calibration échelle : longueur réelle de la plus grande façade (m) : <input type="number" step="0.01" id="calib" placeholder="auto"> <button class="sec" onclick="recalculer()">Recalculer avec ces paramètres</button></p>
+  </details>
+  <p id="chargement" class="hidden">⏳ Analyse vectorielle, reconstruction 3D et calcul des métrés…</p>
+</div>
+
+<div id="resultats" class="hidden">
+  <div class="card"><h2>2 · Contrôles de rigueur — le devis définitif est bloqué tant qu'un contrôle BLOQUANT subsiste</h2><div id="controles"></div>
+ <h3>📑 Feuilles du dossier analysées</h3><div id="feuilles"></div>
+ <h3>🔎 Données constructives extraites des feuilles (coupes, façades, annotations) — aucune valeur inventée</h3><div id="extraites"></div></div>
+  <div class="card"><h2>3 · Vue 3D du modèle reconstruit — contrôlez visuellement que tout le plan a été pris en compte</h2>
+   <p class="small">Faites glisser pour pivoter · molette pour zoomer · comparez avec la feuille de plan à droite : tout élément présent sur le plan et absent du modèle (ou l'inverse) doit vous alerter avant chiffrage.</p>
+   <p>
+     <button class="sec" onclick="vue3D('persp')">Perspective</button><button class="sec" onclick="vue3D('dessus')">Dessus (plan)</button><button class="sec" onclick="vue3D('face')">Façade</button>
+     <button class="sec" onclick="pleinEcran3D()">⛶ Plein écran</button>
+     <label class="small"><input type="checkbox" id="v3_toit" checked onchange="dessiner3D()"> Toiture</label>
+     <label class="small"><input type="checkbox" id="v3_murs" checked onchange="dessiner3D()"> Murs extérieurs</label>
+     <label class="small"><input type="checkbox" id="v3_cloisons" checked onchange="dessiner3D()"> Cloisons intérieures</label>
+     <label class="small"><input type="checkbox" id="v3_dalles" checked onchange="dessiner3D()"> Dalles</label>
+     <label class="small"><input type="checkbox" id="v3_ouv" checked onchange="dessiner3D()"> Ouvertures</label>
+     <label class="small">Écartement des niveaux <input type="range" id="v3_ecart" min="0" max="2" step="0.1" value="0" style="width:90px" oninput="dessiner3D()"></label>
+   </p>
+   <div class="flex">
+     <div style="flex:1.6"><canvas id="vue3d" width="1200" height="520"></canvas></div>
+     <div>
+       <h3 style="margin-top:0">Feuille de plan source</h3>
+       <img id="apercuPlan" alt="Aperçu de la feuille de plan analysée" style="width:100%;border:1px solid #B0BEC5;border-radius:8px">
+       <h3>✅ Contrôle modèle ↔ plan, élément par élément</h3><div id="controle3d"></div>
+     </div>
+   </div>
+   <div class="grid" id="kpis" style="margin-top:10px"></div>
+   <div class="flex"><div><h3>Éléments modélisés</h3><div id="elements"></div></div>
+   <div><h3>Pièces lues sur le plan (surfaces d'architecte)</h3><div id="pieces"></div></div></div></div>
+  <div class="card"><h2>4 · Devis poste par poste — quantités issues du modèle 3D (modifiables, toute modification est de votre responsabilité)</h2>
+    <div class="tabs"><button id="tab-devis" class="actif" onclick="onglet('devis')">Devis &amp; marges</button>
+    <button id="tab-materiaux" onclick="onglet('materiaux')">🧱 Bordereau matériaux à commander</button>
+    <button id="tab-mo" onclick="onglet('mo')">👷 Main-d'œuvre (heures)</button></div>
+    <div id="vue-devis"></div><div id="vue-materiaux" class="hidden"></div><div id="vue-mo" class="hidden"></div>
+    <div id="totaux" style="margin-top:12px"></div></div>
+  <div class="card"><h2>5 · Validation humaine obligatoire avant devis définitif</h2>
+    <div id="checklist"></div>
+    <p><button class="rouge" id="btnPdfB" onclick="exporter('pdf',false)">Exporter le PDF BROUILLON</button>
+    <button class="vert" id="btnPdfD" onclick="exporter('pdf',true)" disabled>Exporter le PDF DÉFINITIF</button>
+    <button class="sec" onclick="exporter('excel',false)">⬇ Export Excel complet (devis + métrés + matériaux + MO + contrôles)</button></p>
+    <p class="small">⚠ Même « définitif », ce document doit être vérifié et signé par un professionnel du bâtiment. Les postes marqués HYPOTHÈSE reposent sur un paramètre non lu sur le plan (profondeur de fondation, épaisseur de mur, pente…) : une erreur de métré engage la marge — et la trésorerie — de l'entreprise.</p></div>
+</div>
+</main>
+<script>
+let DATA=null;
+const PARAMS=[["ep_mur_ext_m","Ép. mur ext. (m)",0.20],["prof_fondation_m","Prof. fondation (m)",0.80],["larg_fondation_m","Larg. semelle (m)",0.60],
+["h_sous_plafond_m","H. sous plafond (m)",2.50],["perte_materiaux_pct","Perte matériaux min. (%)",5],["taux_horaire_mo_eur","Taux horaire MO (€/h)",48],
+["tva_pct","TVA (%)",20],["heures_par_jour","Heures / jour",7]];
+document.getElementById('params').innerHTML=PARAMS.map(p=>`<label class="small">${p[0]}<br>${p[1]}<br><input type="number" step="any" id="param_${p[0]}" value="${p[2]}"></label>`).join('');
+function params(){let o={};PARAMS.forEach(p=>o[p[0]]=parseFloat(document.getElementById('param_'+p[0]).value));return o}
+const drop=document.getElementById('drop'),file=document.getElementById('file');
+drop.onclick=()=>file.click();drop.ondragover=e=>{e.preventDefault()};drop.ondrop=e=>{e.preventDefault();analyser(e.dataTransfer.files)};
+file.onchange=()=>analyser(file.files);
+function chargement(v){document.getElementById('chargement').classList.toggle('hidden',!v)}
+async function lireReponse(r){
+ const txt=await r.text();let data=null;
+ try{data=JSON.parse(txt)}catch(e){throw new Error("Le serveur d'analyse n'a pas répondu (HTTP "+r.status+"). ⚠ Ouvrez l'application via l'aperçu SERVEUR « PlanMetric Pro — PWA » — pas via l'aperçu statique du fichier — puis réessayez. Si le problème persiste, demandez à l'assistant de relancer le serveur.")}
+ if(!r.ok)throw new Error((data&&data.erreur)||("Erreur du serveur d'analyse (HTTP "+r.status+"). Réessayez ; si le problème persiste, relancez le serveur."))
+ return data}
+async function analyser(liste){if(!liste||!liste.length)return;chargement(true);let fd=new FormData();[...liste].forEach(f=>fd.append('fichiers',f));
+ drop.firstChild.textContent="📄 "+liste.length+" feuille(s) chargée(s) : "+[...liste].map(f=>f.name).join(", ");
+ try{let r=await fetch('/api/analyser',{method:'POST',body:fd});DATA=await lireReponse(r);afficher()}catch(e){alert(e.message||e)}chargement(false)}
+async function demo(){chargement(true);try{let r=await fetch('/api/demo',{method:'POST'});DATA=await lireReponse(r);afficher()}catch(e){alert(e.message||e)}chargement(false)}
+async function recalculer(){if(!DATA)return;chargement(true);let body={metriques:DATA.metriques,parametres:params()};
+ let c=parseFloat(document.getElementById('calib').value);if(c)body.calibration_longueur_m=c;
+ try{let r=await fetch('/api/recalculer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});DATA=await lireReponse(r);afficher()}catch(e){alert(e.message||e)}chargement(false)}
+const euro=x=>x.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+function afficher(){
+ document.getElementById('resultats').classList.remove('hidden');
+ let m=DATA.metriques,s=DATA.synthese;
+ document.getElementById('controles').innerHTML=DATA.controles.map(c=>`<p class="${c.niveau==='BLOQUANT'?'alert':(c.niveau==='OK'?'okbox':'')}" style="padding:8px;border-left:5px solid ${c.niveau==='BLOQUANT'?'#C00000':c.niveau==='OK'?'#548235':'#ED7D31'};background:#FAFAFA;border-radius:6px"><span class="badge ${c.niveau}">${c.niveau}</span> <b>${c.titre}</b> — ${c.detail}</p>`).join('');
+ document.getElementById('kpis').innerHTML=[["Emprise au sol",(m.emprise_sol_m2||'?')+" m² ("+(m.longueur_m||'?')+"×"+(m.largeur_m||'?')+" m)"],
+ ["Périmètre",m.perimetre_m+" ml"],["Niveaux",m.nb_niveaux+" × "+m.hauteur_niveau_m+" m"],["Surface habitable",(m.surface_habitable_m2||'?')+" m²"],
+ ["Murs ext. nets",DATA.elements_3d.surface_murs_ext_net_m2+" m²"],["Toiture",DATA.elements_3d.surface_toiture_m2+" m²"],
+ ["Ouvertures cotées",(m.surface_ouvertures_m2||0)+" m²"],["Total vente HT",euro(s.total_vente_ht)]].map(k=>`<div class="kpi"><span class="small">${k[0]}</span><b>${k[1]}</b></div>`).join('');
+ document.getElementById('elements').innerHTML=`<table><tr><th>Élément 3D</th><th>Dimension réelle</th></tr>
+ <tr><td>Murs extérieurs</td><td>Périmètre ${m.perimetre_m} ml × ${m.hauteur_niveau_m} m × ${m.nb_niveaux} niv. − ouvertures = ${DATA.elements_3d.surface_murs_ext_net_m2} m²</td></tr>
+ <tr><td>Murs / cloisons intérieurs (vectoriels fusionnés)</td><td>${m.longueur_murs_interieurs_ml} ml (${(m.murs_interieurs||[]).length} segments)</td></tr>
+ <tr><td>Dalles / planchers</td><td>${m.emprise_sol_m2} m² × ${m.nb_niveaux}</td></tr>
+ <tr><td>Toiture</td><td>${DATA.elements_3d.surface_toiture_m2} m² (pente ${m.pente_toit_pct} % — ${m.source_pente})</td></tr></table>`;
+ document.getElementById('feuilles').innerHTML=`<table><tr><th>Fichier</th><th>Page</th><th>Type de feuille détecté</th><th>Segments vectoriels</th></tr>${(m.feuilles||[]).map(f=>`<tr><td>${f.fichier}</td><td>${f.page}</td><td><b>${f.type}</b></td><td>${f.segments}</td></tr>`).join('')}</table>`;
+ document.getElementById('extraites').innerHTML=((m.donnees_extraites||[]).length?`<table><tr><th>Donnée</th><th>Valeur extraite</th><th>Source (feuille)</th></tr>${m.donnees_extraites.map(d=>`<tr><td><b>${d.donnee}</b></td><td>${d.valeur} ${d.unite}</td><td>${d.source}</td></tr>`).join('')}</table>`:'')
+ +((m.donnees_manquantes||[]).length?`<p class="alert"><b>⛔ Données absentes du dossier (non inventées) :</b> ${m.donnees_manquantes.join(', ')} — ajoutez la feuille qui les contient (généralement la coupe ou les façades) puis relancez l'analyse.</p>`:'<p class="okbox">✅ Toutes les données constructives recherchées ont été trouvées dans le dossier.</p>');
+ document.getElementById('pieces').innerHTML=(m.pieces&&m.pieces.length)?`<table><tr><th>Pièce</th><th>Surface annotée</th><th>Source</th></tr>${m.pieces.map(p=>`<tr><td>${p.nom}</td><td>${p.surface_m2} m²</td><td>${p.source}</td></tr>`).join('')}</table>`:`<p class="small">Aucune surface de pièce annotée lisible.</p>`;
+ if(m.apercu_plan_png)document.getElementById('apercuPlan').src=m.apercu_plan_png;
+ let ecartPieces=(m.surface_habitable_m2&&m.surface_pieces_m2)?Math.abs(m.surface_pieces_m2-m.surface_habitable_m2)/m.surface_habitable_m2*100:null;
+ let lignes3d=[["Emprise / façades",`${m.longueur_m} × ${m.largeur_m} m = ${m.emprise_sol_m2} m²`,m.echelle_validee?"OK":"BLOQUANT",m.echelle_validee?"Échelle validée par les cotations du plan":"Échelle NON validée : calibrez sur une cote connue"],
+ ["Niveaux modélisés",`${m.nb_niveaux} niveau(x) × ${m.hauteur_niveau_m} m`,m.nb_niveaux?"OK":"BLOQUANT",`${m.source_hauteur}`],
+ ["Murs / cloisons intérieurs",`${m.longueur_murs_interieurs_ml} ml en ${(m.murs_interieurs||[]).length} segment(s)`,(m.murs_interieurs||[]).length?"OK":"ALERTE","Segments vectoriels fusionnés du plan — vérifiez-les dans la vue 3D (orange)"],
+ ["Ouvertures (fenêtres/portes)",`${(m.ouvertures||[]).length} cotée(s) = ${m.surface_ouvertures_m2||0} m²`,(m.ouvertures||[]).length?"OK":"ALERTE","Déduites des murs ; visibles en bleu/brun sur les façades du modèle"],
+ ["Pièces",`${(m.pieces||[]).length} pièce(s), ${m.surface_pieces_m2} m² annotés`,ecartPieces!==null&&ecartPieces<8?"OK":"ALERTE",ecartPieces!==null?`Écart avec la surface habitable : ${ecartPieces.toFixed(1)} % (seuil 8 %)`:"Surface habitable non confrontable"],
+ ["Toiture",`${DATA.elements_3d.surface_toiture_m2} m², pente ${m.pente_toit_pct} %`,"CALCULÉ",`${m.source_pente}`]];
+ document.getElementById('controle3d').innerHTML=`<table><tr><th>Élément</th><th>Dans le modèle 3D</th><th>Statut</th><th>Preuve / source</th></tr>${lignes3d.map(l=>`<tr><td><b>${l[0]}</b></td><td>${l[1]}</td><td><span class="badge ${l[2]}">${l[2]}</span></td><td class="small">${l[3]}</td></tr>`).join('')}</table>`;
+ rendreDevis();rendreMateriaux();rendreMO();rendreChecklist();dessiner3D();
+ document.getElementById('resultats').scrollIntoView({behavior:'smooth'});
+}
+function onglet(o){['devis','materiaux','mo'].forEach(x=>{document.getElementById('vue-'+x).classList.toggle('hidden',x!==o);document.getElementById('tab-'+x).classList.toggle('actif',x===o)})}
+function rendreDevis(){
+ let lots={},html=`<table><tr><th>Code</th><th>Poste</th><th>U</th><th>Quantité (modèle 3D)</th><th>PU vente HT</th><th>Total HT</th><th>Matériaux</th><th>MO</th><th>Marge</th><th>Traçabilité</th></tr>`;
+ DATA.lignes.forEach((l,i)=>{if(!lots[l.lot]){lots[l.lot]=1;html+=`<tr class="lot"><td colspan="10">${l.lot}</td></tr>`}
+  html+=`<tr><td>${l.code}</td><td><b>${l.poste}</b></td><td>${l.unite}</td>
+  <td><input type="number" step="0.01" value="${l.quantite}" onchange="majLigne(${i},'quantite',this.value)"></td>
+  <td><input type="number" step="0.01" value="${l.prix_unitaire_vente}" onchange="majLigne(${i},'pu',this.value)"></td>
+  <td><b>${euro(l.total_vente_ht)}</b></td><td>${euro(l.materiaux.reduce((a,x)=>a+x.cout_total,0))}</td>
+  <td>${l.main_oeuvre.heures_totales} h<br><span class="small">${euro(l.main_oeuvre.cout_total)}</span></td>
+  <td style="color:${l.marge_pct<15?'#C00000':'#548235'}"><b>${l.marge_pct} %</b></td>
+  <td><span class="badge ${l.statut}">${l.statut}</span><br><span class="small">${l.formule}<br><i>${l.source}</i></span></td></tr>`});
+ document.getElementById('vue-devis').innerHTML=html+"</table>";majTotaux();
+}
+function majLigne(i,champ,val){let l=DATA.lignes[i];val=parseFloat(val)||0;
+ if(champ==='quantite'){let ratio=l.quantite?val/l.quantite:0;l.quantite=val;
+   l.materiaux.forEach(x=>{x.quantite=Math.round(x.quantite*ratio*100)/100;x.cout_total=Math.round(x.quantite*x.prix_achat_unitaire*100)/100});
+   l.main_oeuvre.heures_totales=Math.round(val*l.main_oeuvre.temps_unitaire_h*10)/10;l.main_oeuvre.cout_total=Math.round(l.main_oeuvre.heures_totales*l.main_oeuvre.taux_horaire*100)/100;}
+ else l.prix_unitaire_vente=val;
+ l.total_vente_ht=Math.round(l.quantite*l.prix_unitaire_vente*100)/100;
+ let deb=l.materiaux.reduce((a,x)=>a+x.cout_total,0)+l.main_oeuvre.cout_total;l.debourse_sec=Math.round(deb*100)/100;
+ l.marge_eur=Math.round((l.total_vente_ht-deb)*100)/100;l.marge_pct=l.total_vente_ht?Math.round((l.total_vente_ht-deb)/l.total_vente_ht*1000)/10:0;
+ recalculerSynthese();rendreDevis()}
+function recalculerSynthese(){let s=DATA.synthese,tv=0,tm=0,th=0,tmo=0;
+ DATA.lignes.forEach(l=>{tv+=l.total_vente_ht;tm+=l.materiaux.reduce((a,x)=>a+x.cout_total,0);th+=l.main_oeuvre.heures_totales;tmo+=l.main_oeuvre.cout_total});
+ s.total_vente_ht=Math.round(tv*100)/100;s.total_materiaux_achat_ht=Math.round(tm*100)/100;s.total_main_oeuvre_heures=Math.round(th*10)/10;
+ s.total_main_oeuvre_eur=Math.round(tmo*100)/100;s.debourse_sec_total=Math.round((tm+tmo)*100)/100;s.marge_brute_eur=Math.round((tv-tm-tmo)*100)/100;
+ s.marge_brute_pct=tv?Math.round((tv-tm-tmo)/tv*1000)/10:0;s.tva_eur=Math.round(tv*s.tva_pct)/100;s.total_ttc=Math.round(tv*(1+s.tva_pct/100)*100)/100;
+ s.duree_1_personne_jours=Math.round(th/DATA.parametres.heures_par_jour*10)/10;s.duree_equipe_4_jours=Math.round(th/DATA.parametres.heures_par_jour/4*10)/10;
+ // Re-agréger le bordereau matériaux
+ let b={};DATA.lignes.forEach(l=>l.materiaux.forEach(x=>{let k=x.designation+x.unite;if(!b[k])b[k]={designation:x.designation,unite:x.unite,quantite_totale:0,prix_achat_unitaire:x.prix_achat_unitaire,cout_total:0,postes:[],conditionnement:x.conditionnement,taille_conditionnement:null,quantite_a_commander:0};
+ b[k].quantite_totale=Math.round((b[k].quantite_totale+x.quantite)*100)/100;b[k].cout_total=Math.round((b[k].cout_total+x.cout_total)*100)/100;if(!b[k].postes.includes(l.code))b[k].postes.push(l.code)}));
+ DATA.bordereau_materiaux=Object.values(b).sort((a,b2)=>b2.cout_total-a.cout_total);rendreMateriaux();rendreMO()}
+function majTotaux(){let s=DATA.synthese;document.getElementById('totaux').innerHTML=
+ `<div class="grid"><div class="kpi"><span class="small">TOTAL VENTE HT</span><b>${euro(s.total_vente_ht)}</b></div>
+ <div class="kpi"><span class="small">TVA ${s.tva_pct} % / TTC</span><b>${euro(s.total_ttc)}</b></div>
+ <div class="kpi"><span class="small">Déboursé matériaux (achats HT)</span><b>${euro(s.total_materiaux_achat_ht)}</b></div>
+ <div class="kpi"><span class="small">Main-d'œuvre totale</span><b>${s.total_main_oeuvre_heures} h · ${euro(s.total_main_oeuvre_eur)}</b></div>
+ <div class="kpi"><span class="small">Marge brute</span><b style="color:${s.marge_brute_pct<20?'#C00000':'#548235'}">${euro(s.marge_brute_eur)} (${s.marge_brute_pct} %)</b></div>
+ <div class="kpi"><span class="small">Durée chantier (MO)</span><b>${s.duree_equipe_4_jours} jours à 4 pers.</b></div></div>
+ ${s.prix_moyen_m2_habitable?`<p class="small">Contrôle de cohérence global : ${euro(s.prix_moyen_m2_habitable)} / m² habitable (à comparer à vos chantiers de référence — un écart anormal signale un métré suspect).</p>`:''}`}
+function rendreMateriaux(){let s=DATA.synthese;
+ document.getElementById('vue-materiaux').innerHTML=`<p class="small">Quantités <b>pertes chantier incluses</b>, prêtes pour les commandes fournisseurs. Total achats : <b>${euro(s.total_materiaux_achat_ht)} HT</b>.</p>
+ <p class="small">Exemple de lecture : les vis, montants, fourrures, bandes… sont calculés depuis les ratios de pose de chaque poste (entraxe des montants 0,60 m, 12 vis/m² de plaque, suspentes en grille 0,60 × 1,20 m, etc.) puis <b>arrondis au conditionnement fournisseur</b>.</p>
+<table><tr><th>Matériau</th><th>Unité</th><th>Quantité nette (pertes incluses)</th><th>Conditionnement</th><th>À commander</th><th>Prix achat unit. HT</th><th>Coût total HT</th><th>Postes</th></tr>
+ ${DATA.bordereau_materiaux.map(b=>`<tr><td><b>${b.designation}</b></td><td>${b.unite}</td><td>${b.quantite_totale}</td><td>${b.conditionnement||'—'}${b.nb_conditionnements?` × <b>${b.nb_conditionnements}</b>`:''}</td><td><b>${b.quantite_a_commander||b.quantite_totale}</b></td><td>${euro(b.prix_achat_unitaire)}</td><td>${euro(b.cout_total)}</td><td>${b.postes.join(', ')}</td></tr>`).join('')}</table>
+ <details><summary>Détail des matériaux par poste (ratios par unité d'ouvrage)</summary>${DATA.lignes.filter(l=>l.materiaux.length).map(l=>`<p><b>${l.code} — ${l.poste}</b> (${l.quantite} ${l.unite})</p><table><tr><th>Matériau</th><th>Ratio / unité d'ouvrage</th><th>Perte</th><th>Quantité nette</th><th>Conditionnement</th><th>À commander (ce poste)</th><th>Coût</th></tr>${l.materiaux.map(x=>`<tr><td>${x.designation}</td><td>${x.quantite_par_unite_ouvrage} ${x.unite}</td><td>${x.perte_pct} %</td><td>${x.quantite} ${x.unite}</td><td>${x.conditionnement||'—'}${x.nb_conditionnements?` × ${x.nb_conditionnements}`:''}</td><td><b>${x.quantite_a_commander} ${x.unite}</b></td><td>${euro(x.cout_total)}</td></tr>`).join('')}</table>`).join('')}</details>`}
+function rendreMO(){let s=DATA.synthese,q=s.main_oeuvre_par_qualification||{};
+ document.getElementById('vue-mo').innerHTML=`<p class="small">Temps unitaires issus des ratios de pose par poste. Total : <b>${s.total_main_oeuvre_heures} heures</b> (${euro(s.total_main_oeuvre_eur)} au taux chargé paramétré), soit ${s.duree_1_personne_jours} jours à 1 personne ou <b>${s.duree_equipe_4_jours} jours avec une équipe de 4</b>.</p>
+ <table><tr><th>Qualification / corps d'état</th><th>Heures</th><th>Jours (1 pers.)</th></tr>${Object.entries(q).map(e=>`<tr><td><b>${e[0]}</b></td><td>${e[1]} h</td><td>${Math.round(e[1]/DATA.parametres.heures_par_jour*10)/10} j</td></tr>`).join('')}</table>
+ <table style="margin-top:10px"><tr><th>Code</th><th>Poste</th><th>Qualification</th><th>Temps unit.</th><th>Quantité</th><th>Heures totales</th><th>Coût MO</th></tr>
+ ${DATA.lignes.map(l=>`<tr><td>${l.code}</td><td>${l.poste}</td><td>${l.main_oeuvre.qualification}</td><td>${l.main_oeuvre.temps_unitaire_h} h/${l.unite}</td><td>${l.quantite} ${l.unite}</td><td><b>${l.main_oeuvre.heures_totales} h</b></td><td>${euro(l.main_oeuvre.cout_total)}</td></tr>`).join('')}</table>`}
+function rendreChecklist(){
+ let bloquant=DATA.controles.some(c=>c.niveau==='BLOQUANT');
+ let hyps=Object.entries(DATA.metres).filter(e=>['HYPOTHÈSE','MANQUANT'].includes(e[1].statut)).map(e=>e[0]);
+ let items=[...hyps.map(h=>DATA.metres[h].statut==='MANQUANT'?`Donnée MANQUANTE « ${h} » : fournir la feuille source puis relancer l'analyse (${DATA.metres[h].source})`:`Valider « ${h} » : ${DATA.metres[h].formule} (${DATA.metres[h].source})`),
+  "Vérifier l'échelle du plan sur une cote connue (calibration ci-dessus)","Contrôler au moins 3 quantités à la main sur le plan coté",
+  "Valider les prix d'achat matériaux auprès des fournisseurs","Valider les temps unitaires MO avec le conducteur de travaux"];
+ document.getElementById('checklist').innerHTML=(bloquant?`<div class="alert"><b>⛔ Contrôle BLOQUANT présent</b> : le bouton « devis définitif » reste désactivé. Corrigez la cause (PDF vectoriel, calibration d'échelle…) puis relancez l'analyse.</div>`:'')
+ +items.map((t,i)=>`<label class="chk"><input type="checkbox" class="chkval" onchange="verifChecklist()"> ${t}</label>`).join('');
+ document.getElementById('btnPdfD').disabled=true;verifChecklist._bloquant=bloquant}
+function verifChecklist(){let ok=[...document.querySelectorAll('.chkval')].every(c=>c.checked);
+ document.getElementById('btnPdfD').disabled=!(ok&&!verifChecklist._bloquant)}
+async function exporter(type,definitif){if(!DATA)return;DATA.definitif=definitif;
+ let r=await fetch('/api/export/'+type,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(DATA)});
+ if(!r.ok){alert("Export impossible (HTTP "+r.status+") : le serveur d'analyse est injoignable. Ouvrez l'application via l'aperçu serveur « PlanMetric Pro — PWA ».");return}
+ let b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);
+ a.download=type==='pdf'?(definitif?'devis_definitif.pdf':'devis_BROUILLON_a_valider.pdf'):'devis_metres_materiaux_MO.xlsx';a.click()}
+// ---------- PWA : service worker + installation ----------
+if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js").catch(()=>{})}
+let inviteInstall=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();inviteInstall=e;document.getElementById('btnInstall').style.display="inline-block"});
+document.getElementById('btnInstall').onclick=async()=>{if(!inviteInstall)return;inviteInstall.prompt();let r=await inviteInstall.userChoice;
+ if(r.outcome==="accepted"){document.getElementById('btnInstall').style.display="none"}inviteInstall=null};
+window.addEventListener("appinstalled",()=>{document.getElementById('btnInstall').style.display="none";document.getElementById('installOk').style.display="inline"});
+if(window.matchMedia("(display-mode: standalone)").matches){document.getElementById('installOk').style.display="inline"}
+if(new URLSearchParams(location.search).get("demo")==="1"){window.addEventListener("load",()=>demo())}
+// ---------- Mini moteur 3D (canvas, sans librairie externe) ----------
+let AZ=-0.7,EL=0.55,ZOOM=26;
+function vue3D(v){if(v==='dessus'){AZ=-0.7;EL=1.35}else if(v==='face'){AZ=0;EL=0.18}else{AZ=-0.7;EL=0.55}dessiner3D()}
+function pleinEcran3D(){let c=document.getElementById('vue3d');if(c.requestFullscreen)c.requestFullscreen()}
+function dessiner3D(){let cv=document.getElementById('vue3d');if(!cv||!DATA)return;
+ let m=DATA.metriques,e=DATA.elements_3d,L=m.longueur_m||10,W=m.largeur_m||8,N=m.nb_niveaux||1,h=m.hauteur_niveau_m||2.7;
+ let ecart=parseFloat((document.getElementById('v3_ecart')||{}).value||0);
+ let opt=id=>{let el=document.getElementById(id);return !el||el.checked};
+ function proj(x,y,z){let cx=(x-L/2),cy=(y-W/2);let X=cx*Math.cos(AZ)-cy*Math.sin(AZ),Y=cx*Math.sin(AZ)+cy*Math.cos(AZ);
+  let Y2=Y*Math.cos(EL)-z*Math.sin(EL),Z2=Y*Math.sin(EL)+z*Math.cos(EL);return[cv.width/2+X*ZOOM,cv.height/2+Y2*ZOOM+50,Z2]}
+ function facesBoite(x,y,z,dx,dy,dz,couleur){let c=[[x,y,z],[x+dx,y,z],[x+dx,y+dy,z],[x,y+dy,z],[x,y,z+dz],[x+dx,y,z+dz],[x+dx,y+dy,z+dz],[x,y+dy,z+dz]];
+  return[[0,1,2,3],[4,7,6,5],[0,4,5,1],[1,5,6,2],[2,6,7,3],[3,7,4,0]].map(f=>({pts:f.map(i=>proj(...c[i])),couleur}))}
+ let faces=[];
+ for(let n=0;n<N;n++){let z=n*(h+ecart);
+  if(opt('v3_dalles'))faces.push(...facesBoite(0,0,z,L,W,0.15,'#B8CCE4'));
+  if(opt('v3_murs')){faces.push(...facesBoite(0,0,z,0.25,W,h,'#8EAADB'));faces.push(...facesBoite(L-0.25,0,z,0.25,W,h,'#8EAADB'));
+   faces.push(...facesBoite(0,0,z,L,0.25,h,'#A9BCDB'));faces.push(...facesBoite(0,W-0.25,z,L,0.25,h,'#A9BCDB'));}
+  if(opt('v3_cloisons'))(e.murs_interieurs||[]).forEach(w=>{let dx=Math.abs(w.x2-w.x1)||0.12,dy=Math.abs(w.y2-w.y1)||0.12;
+   faces.push(...facesBoite(Math.min(w.x1,w.x2),Math.min(w.y1,w.y2),z,Math.max(dx,0.12),Math.max(dy,0.12),h,'#D6A45C'))});
+  if(opt('v3_ouv')){let xSud=0.4,xNord=0.4;(e.ouvertures||[]).forEach((o,i)=>{let larg=o.largeur_m||1,haut=o.hauteur_m||1.2;
+   let seuil=o.type==='Porte'?0:0.85,coul=o.type==='Porte'?'#6B4F2A':'#243B53';
+   if(i%2===0){if(xSud+larg<L-0.3){faces.push(...facesBoite(xSud,-0.06,z+seuil,larg,0.37,haut,coul));xSud+=larg+0.5}}
+   else{if(xNord+larg<L-0.3){faces.push(...facesBoite(xNord,W-0.31,z+seuil,larg,0.37,haut,coul));xNord+=larg+0.5}}});}}
+ if(opt('v3_toit')){let zt=N*h+(N-1)*ecart,prof=(W/2)*((m.pente_toit_pct||35)/100);
+  faces.push({pts:[[0,0,zt],[L,0,zt],[L,W/2,zt+prof],[0,W/2,zt+prof]].map(p=>proj(...p)),couleur:'#C55A11'},
+   {pts:[[L,W,zt],[0,W,zt],[0,W/2,zt+prof],[L,W/2,zt+prof]].map(p=>proj(...p)),couleur:'#A64A0D'},
+   {pts:[[0,0,zt],[0,W,zt],[0,W/2,zt+prof]].map(p=>proj(...p)),couleur:'#D9D9D9'},
+   {pts:[[L,0,zt],[L,W,zt],[L,W/2,zt+prof]].map(p=>proj(...p)),couleur:'#BFBFBF'});}
+ let ctx=cv.getContext('2d');ctx.clearRect(0,0,cv.width,cv.height);
+ faces.sort((a,b)=>a.pts.reduce((t,p)=>t+p[2],0)/a.pts.length-b.pts.reduce((t,p)=>t+p[2],0)/b.pts.length);
+ faces.forEach(f=>{ctx.beginPath();f.pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();
+  ctx.fillStyle=f.couleur;ctx.fill();ctx.strokeStyle='rgba(31,78,121,.55)';ctx.stroke()});
+ ctx.fillStyle='#1F4E79';ctx.font='bold 14px Arial';
+ ctx.fillText(`${m.type_batiment||''} — ${L} × ${W} m — ${N} niveau(x) de ${h} m — Toiture ${m.pente_toit_pct}% — ${(e.ouvertures||[]).length} ouverture(s)`,16,26);
+ ctx.font='12px Arial';ctx.fillStyle='#555';
+ ctx.fillText(`Calques : toit=${opt('v3_toit')?'oui':'non'}, murs ext.=${opt('v3_murs')?'oui':'non'}, cloisons=${opt('v3_cloisons')?'oui':'non'}, dalles=${opt('v3_dalles')?'oui':'non'}, ouvertures=${opt('v3_ouv')?'oui':'non'} — orange = cloisons intérieures, bleu foncé = fenêtres, brun = portes`,16,cv.height-12);
+ cv.onmousedown=e=>{let X=e.clientX,Y=e.clientY;cv.onmousemove=ev=>{AZ+=(ev.clientX-X)*0.008;EL=Math.max(0.05,Math.min(1.45,EL+(ev.clientY-Y)*0.006));X=ev.clientX;Y=ev.clientY;dessiner3D()};cv.onmouseup=()=>cv.onmousemove=null};
+ cv.onwheel=e=>{e.preventDefault();ZOOM=Math.max(8,Math.min(80,ZOOM-e.deltaY*0.02));dessiner3D()};}
+</script></body></html>
